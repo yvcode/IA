@@ -61,6 +61,8 @@ shutdown_auth = 'shutdown'
 parent_dir = os.path.dirname(os.path.dirname(__file__))
 result_img_path = os.path.join('/etc/Frames', 'result_img.jpeg')
 base_path = '/etc/Frames'
+frame_counter = 0
+frame_metadata_cache = {}
 
 # Build the source
 source = (
@@ -85,12 +87,14 @@ sink = (
 
 
 def callback(ch, method, properties, body):
+    global frame_counter
     print(f" [x] Received {body.decode()}")
     frame_metadata = json.loads(body.decode())
     path = os.path.join(base_path, frame_metadata["path"])
-    path_attr = Attribute(namespace="Custom", name="OriginalPath", values=[AttributeValue.string(path)])
 
-    frame_source = JpegSource(source_id, path)
+    frame_source = JpegSource(source_id, path, pts=frame_counter)
+    frame_metadata_cache[frame_counter] = path
+    frame_counter +=1
     source(frame_source, send_eos=False)
 
 channel.basic_consume(
@@ -110,9 +114,7 @@ for result in sink:
         # Optionally send a shutdown message to the module
         # source.send_shutdown(source_id, shutdown_auth)
         break
-
-    original_path_attr = result.frame_meta.get_attribute('Custom', 'OriginalPath')
-    original_path = original_path_attr.values[0].as_string()
+    original_path= frame_metadata_cache[result.frame_meta.pts]
 
     img = np.frombuffer(result.frame_content, dtype=np.uint8)
     img = cv2.imdecode(img, cv2.IMREAD_COLOR)
