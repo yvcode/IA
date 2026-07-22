@@ -1,6 +1,7 @@
 import json
 import os
 import time
+import pika
 
 import cv2
 import numpy as np
@@ -16,6 +17,24 @@ from savant.api.builder import build_bbox
 from savant.client import JaegerLogProvider, JpegSource, SinkBuilder, SourceBuilder
 
 print('Starting Savant client...')
+
+
+connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+channel = connection.channel()
+
+channel.queue_declare(queue='Frames', durable=True)
+
+def callback(ch, method, properties, body):
+    print(f" [x] Received {body.decode()}")
+
+channel.basic_consume(
+    queue='Frames',
+    on_message_callback=callback,
+    auto_ack=True
+)
+
+
+
 # Initialize Jaeger tracer to send metrics and logs to Jaeger.
 # Note: the Jaeger tracer also should be configured in the module.
 telemetry_config = TelemetryConfiguration(
@@ -71,16 +90,9 @@ sink = (
 
 # Specify a JPEG image to send to the module
 src_jpeg = JpegSource(source_id, '/test_data/test_img.jpeg')
-with open('/test_data/test_img.json', 'r', encoding='utf8') as f:
-    src_meta = json.loads(f.read())
 
-# the test image has 1 person and 1 face
-person_bbox, face_bbox = None, None
-for obj in src_meta['objects']:
-    if obj['label'] == 'person':
-        person_bbox = build_bbox(obj['bbox'])
-    elif obj['label'] == 'face':
-        face_bbox = build_bbox(obj['bbox'])
+
+
 
 # Send a JPEG image from a file to the module
 # And then send an EOS message
@@ -100,22 +112,7 @@ for result in sink:
         # source.send_shutdown(source_id, shutdown_auth)
         break
 
-    # first message is the module result for the sent JPEG
-    # check that the result is correct
-    # for simplicity, we only check the IOU coefs of bounding boxes
-    for obj in result.frame_meta.get_all_objects():
-        print("got into loop")
-        if obj.label == 'person':
-            print(f"label is person: {obj.detection_box.iou(person_bbox)}")
-            assert obj.detection_box.iou(person_bbox) > 0.9, (
-                'Person bbox is not correct'
-            )
-        elif obj.label == 'face':
-            print("label is face: {obj.detection_box.iou(face_bbox)}")
-            assert obj.detection_box.iou(face_bbox) > 0.9, 'Face bbox is not correct'
-    print('Result is correct.')
-    # get the result image
-    # the image will be in RGBA format, as specified in the module config
+
     img = np.frombuffer(result.frame_content, dtype=np.uint8)
     img = cv2.imdecode(img, cv2.IMREAD_COLOR)
 

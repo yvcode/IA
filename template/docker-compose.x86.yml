@@ -5,6 +5,8 @@ services:
     extends:
       file: docker-compose.l4t.yml
       service: client
+    volumes:
+      - /home/ia/user3/IA/Frames:/etc/Frames
 
   uri-input:
     privileged: true
