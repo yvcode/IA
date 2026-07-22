@@ -100,7 +100,7 @@ channel.basic_consume(
 )
 
 consumer = threading.Thread(target=channel.start_consuming, args=())
-
+consumer.start()
 for result in sink:
     print(f'Sink result trace_id {result.trace_id}')
     if result.eos:
