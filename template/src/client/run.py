@@ -91,7 +91,7 @@ def callback(ch, method, properties, body):
     path_attr = Attribute(namespace="Custom", name="OriginalPath", values=[AttributeValue.string(path)])
 
     frame_source = JpegSource(source_id, path)
-    source(frame_source, send_eos=False, attributes=[path_attr])
+    source(frame_source, send_eos=False)
 
 channel.basic_consume(
     queue='Frames',
@@ -103,6 +103,7 @@ consumer = threading.Thread(target=channel.start_consuming, args=())
 consumer.start()
 for result in sink:
     print(f'Sink result trace_id {result.trace_id}')
+    print(dir(result))
     if result.eos:
         # second message is the EOS
         print('EOS')
