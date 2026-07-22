@@ -60,6 +60,7 @@ source_id = 'test-source'
 shutdown_auth = 'shutdown'
 parent_dir = os.path.dirname(os.path.dirname(__file__))
 result_img_path = os.path.join('/etc/Frames', 'result_img.jpeg')
+base_path = '/etc/Frames'
 
 # Build the source
 source = (
@@ -86,8 +87,9 @@ sink = (
 def callback(ch, method, properties, body):
     print(f" [x] Received {body.decode()}")
     frame_metadata = json.loads(body.decode())
-    frame_source = JpegSource(source_id, frame_metadata.path)
-    path_attr = Attribute(namespace="Custom", name="OriginalPath", values=[AttributeValue.string(frame_metadata.path)])
+    path = os.path.join(base_path, frame_metadata["path"])
+    frame_source = JpegSource(source_id, original_path)
+    path_attr = Attribute(namespace="Custom", name="OriginalPath", values=[AttributeValue.string(path)])
     frame_source.frame.set_attribute(path_attr)
     source(frame_source, send_eos=False)
 
@@ -108,8 +110,8 @@ for result in sink:
         # source.send_shutdown(source_id, shutdown_auth)
         break
 
-    path_attr = result.frame_meta.get_attribute('Custom', 'OriginalPath')
-    original_path = path_attr.values[0].as_string()
+    original_path_attr = result.frame_meta.get_attribute('Custom', 'OriginalPath')
+    original_path = original_path_attr.values[0].as_string()
 
     img = np.frombuffer(result.frame_content, dtype=np.uint8)
     img = cv2.imdecode(img, cv2.IMREAD_COLOR)
