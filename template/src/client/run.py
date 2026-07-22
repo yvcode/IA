@@ -88,8 +88,9 @@ def callback(ch, method, properties, body):
     print(f" [x] Received {body.decode()}")
     frame_metadata = json.loads(body.decode())
     path = os.path.join(base_path, frame_metadata["path"])
-    frame_source = JpegSource(source_id, path)
     path_attr = Attribute(namespace="Custom", name="OriginalPath", values=[AttributeValue.string(path)])
+
+    frame_source = JpegSource(source_id, path, attributes=[path_attr])
     frame_source.frame.set_attribute(path_attr)
     source(frame_source, send_eos=False)
 
