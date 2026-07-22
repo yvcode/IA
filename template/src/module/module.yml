@@ -1,0 +1,101 @@
+# module name, required
+name: ${oc.env:MODULE_NAME, 'template'}
+
+# base module parameters
+parameters:
+  # DevMode (hot Python code reload on file change)
+  dev_mode: True
+  # Allows sending shutdown message to the module with the auth-key (see below)
+  shutdown_auth: "shutdown"
+  # enable OpenTelemetry
+  telemetry:
+    tracing:
+      sampling_period: 100
+      root_span_name: pipeline
+      provider: opentelemetry
+      provider_params:
+        service_name: demo-pipeline
+        protocol: grpc
+        endpoint: "http://jaeger:4317"
+
+  # pipeline processing frame parameters
+  frame:
+    width: 1280
+    height: 720
+    # Add paddings to the frame before processing
+  output_frame:
+    codec: jpeg
+  # custom drawing on frames function
+  draw_func:
+    module: src.module.overlay_draw_spec
+    class_name: Overlay
+    #kwargs:
+    rendered_objects:
+      peoplenet:
+        person:
+        face:
+
+
+# pipeline definition
+pipeline:
+  # define pipeline's main elements
+  elements:
+    # primary detector element, inference is provided by the nvinfer Deepstream element
+    # model type is detector (other available types are: classifier, custom)
+    - element: nvinfer@detector
+      # Model's name in the pipeline, mandatory
+      name: peoplenet
+      # model definition
+      model:
+        # remote storage where the model files can be found
+        # skip if providing model files locally
+        remote:
+          url: s3://savant-data/models/peoplenet/peoplenet_deployable_quantized_onnx_v2.6.3.zip
+          checksum_url: s3://savant-data/models/peoplenet/peoplenet_deployable_quantized_onnx_v2.6.3.md5
+          parameters:
+            endpoint: https://eu-central-1.linodeobjects.com
+
+        # model file name, without location
+        model_file: resnet34_peoplenet.onnx
+
+        # configuration of input data and custom preprocessing methods
+        input:
+          # model input layer name
+          layer_name: input_1:0
+          # model input layer shape
+          shape: [3, 544, 960]
+          # pixel scaling/normalization factor
+          scale_factor: 0.0039215697906911373
+
+        # configuration of model output
+        output:
+          # model output layer names
+          layer_names: [output_bbox/BiasAdd:0, output_cov/Sigmoid:0]
+          # number of detected classes for detector model
+          num_detected_classes: 3
+          # specify which detected objects are included in output
+          objects:
+            # object class id
+            - class_id: 0
+              # label assigned to objects of this class id
+              label: person
+              selector:
+                kwargs:
+                  # minimal width of the objects of this class to be included in output
+                  min_width: 32
+                  # minimal height of the objects of this class to be included in output
+                  min_height: 32
+            - class_id: 2
+              label: face
+              selector:
+                kwargs:
+                  # minimal width of the objects of this class to be included in output
+                  min_width: 16
+                  # minimal height of the objects of this class to be included in output
+                  min_height: 16
+
+    # custom pyfunc element
+    - element: pyfunc
+      module: src.module.custom_pyfunc
+      class_name: CustomPyFunc
+      #kwargs:
