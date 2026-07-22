@@ -19,7 +19,7 @@ from savant.client import JaegerLogProvider, JpegSource, SinkBuilder, SourceBuil
 print('Starting Savant client...')
 
 
-connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+connection = pika.BlockingConnection(pika.ConnectionParameters('rabbitmq'))
 channel = connection.channel()
 
 channel.queue_declare(queue='Frames', durable=True)
@@ -65,7 +65,7 @@ healthcheck_url = f'http://{module_hostname}:8888/status'
 source_id = 'test-source'
 shutdown_auth = 'shutdown'
 parent_dir = os.path.dirname(os.path.dirname(__file__))
-result_img_path = os.path.join(parent_dir, 'output', 'result_img.jpeg')
+result_img_path = os.path.join('/etc/Frames', 'result_img.jpeg')
 
 # Build the source
 source = (
@@ -89,7 +89,7 @@ sink = (
 )
 
 # Specify a JPEG image to send to the module
-src_jpeg = JpegSource(source_id, '/test_data/test_img.jpeg')
+src_jpeg = JpegSource(source_id, '/etc/Frames/test_img.jpeg')
 
 
 

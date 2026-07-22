@@ -7,7 +7,7 @@ services:
       - ./assets/test_data:/test_data
       - ./src/client:/opt/savant/src/client
       - ./src/output:/opt/savant/src/output
-    entrypoint: python /opt/savant/src/client/run.py
+    entrypoint: bash -c "pip install pika && python /opt/savant/src/client/run.py"
     environment:
       - MODULE_HOSTNAME=module
     links:
