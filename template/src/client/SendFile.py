@@ -14,9 +14,10 @@ vidcap = cv2.VideoCapture(r'/home/ia/user3/IA/video.mp4')
 success,image = vidcap.read()
 count = 0
 while success:
-    path = f"/home/ia/user3/IA/Frames/frame{count}.jpg"
+    filename="frame{count}.jpg"
+    path = os.path.join("/home/ia/user3/IA/Frames/", filename)
     cv2.imwrite(path, image)
     success,image = vidcap.read()
-    file_msg = {"path": path}
+    file_msg = {"path": filename}
     channel.basic_publish(exchange='', routing_key='Frames', body=json.dumps(file_msg))
     count += 1
