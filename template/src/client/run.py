@@ -3,7 +3,7 @@ import os
 import time
 import pika
 import threading
-
+import traceback
 import cv2
 import numpy as np
 from savant_rs import telemetry
@@ -63,7 +63,7 @@ result_img_path = os.path.join('/etc/Frames', 'result_img.jpeg')
 base_path = '/etc/Frames'
 frame_counter = 0
 frame_metadata_cache = {}
-
+pool_limiter = threading.Semaphore(20)
 # Build the source
 source = (
     SourceBuilder()
@@ -89,6 +89,7 @@ sink = (
 def callback(ch, method, properties, body):
     global frame_counter
     print(f" [x] Received {body.decode()}")
+    pool_limiter.acquire()
     frame_metadata = json.loads(body.decode())
     path = os.path.join(base_path, frame_metadata["path"])
     try:
@@ -96,8 +97,8 @@ def callback(ch, method, properties, body):
         frame_metadata_cache[frame_counter] = path
         frame_counter +=1
         source(frame_source, send_eos=False)
-    except:
-        pass
+    except Exception:
+        print(traceback.format_exc())
 
 channel.basic_consume(
     queue='Frames',
@@ -106,28 +107,33 @@ channel.basic_consume(
 )
 
 consumer = threading.Thread(target=channel.start_consuming, args=())
+print("Start consuming")
 consumer.start()
 for result in sink:
-    print(f'Sink result trace_id {result.trace_id}')
-    if result.eos:
-        # second message is the EOS
-        print('EOS')
-        # Optionally send a shutdown message to the module
-        # source.send_shutdown(source_id, shutdown_auth)
-        break
-    original_path= frame_metadata_cache[result.frame_meta.pts]
-    frame_metadata_cache.pop(result.frame_meta.pts, None)
-    img = np.frombuffer(result.frame_content, dtype=np.uint8)
-    img = cv2.imdecode(img, cv2.IMREAD_COLOR)
+    try:
+        pool_limiter.release()
+        print(f'Sink result trace_id {result.trace_id}')
+        if result.eos:
+            # second message is the EOS
+            print('EOS')
+            # Optionally send a shutdown message to the module
+            # source.send_shutdown(source_id, shutdown_auth)
+            continue
+        original_path= frame_metadata_cache[result.frame_meta.pts]
+        frame_metadata_cache.pop(result.frame_meta.pts, None)
+        img = np.frombuffer(result.frame_content, dtype=np.uint8)
+        img = cv2.imdecode(img, cv2.IMREAD_COLOR)
 
-    # save the result image
-    # the image will anything that the module has drawn on top of the input image
-    print(f'Saving result image to {original_path}')
-    cv2.imwrite(original_path+"_bboxed.jpeg", img)
-
-    # print the processing logs from the module
-    print('Logs from the module:')
-    result.logs().pretty_print()
+        # save the result image
+        # the image will anything that the module has drawn on top of the input image
+        print(f'Saving result image to {original_path}')
+        cv2.imwrite(original_path+"_bboxed.jpeg", img)
+    
+        # print the processing logs from the module
+        print('Logs from the module:')
+        result.logs().pretty_print()
+    except Exception:
+        print(traceback.format_exc())
 
 consumer.join()
 # Shutdown the Jaeger tracer

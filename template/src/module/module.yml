@@ -26,6 +26,7 @@ parameters:
   output_frame:
     codec: jpeg
   # custom drawing on frames function
+  # custom drawing on frames function
   draw_func:
     module: src.module.overlay_draw_spec
     class_name: Overlay
@@ -34,7 +35,6 @@ parameters:
       peoplenet:
         person:
         face:
-
 
 # pipeline definition
 pipeline:

@@ -38,7 +38,6 @@ class Overlay(NvDsDrawFunc):
             draw_spec = ObjectDraw(
                 bounding_box=draw_spec.bounding_box,
                 label=draw_spec.label,
-                central_dot=draw_spec.central_dot,
-                blur=True,
+                central_dot=draw_spec.central_dot
             )
         return draw_spec
