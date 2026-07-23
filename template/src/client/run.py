@@ -107,7 +107,6 @@ consumer = threading.Thread(target=channel.start_consuming, args=())
 consumer.start()
 for result in sink:
     print(f'Sink result trace_id {result.trace_id}')
-    print(dir(result))
     if result.eos:
         # second message is the EOS
         print('EOS')
@@ -115,13 +114,13 @@ for result in sink:
         # source.send_shutdown(source_id, shutdown_auth)
         break
     original_path= frame_metadata_cache[result.frame_meta.pts]
-
+    frame_metadata_cache.pop(result.frame_meta.pts, None)
     img = np.frombuffer(result.frame_content, dtype=np.uint8)
     img = cv2.imdecode(img, cv2.IMREAD_COLOR)
 
     # save the result image
     # the image will anything that the module has drawn on top of the input image
-    print(f'Saving result image to {result_img_path}')
+    print(f'Saving result image to {original_path}')
     cv2.imwrite(original_path+"_bboxed.jpeg", img)
 
     # print the processing logs from the module

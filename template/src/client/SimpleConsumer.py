@@ -58,7 +58,6 @@ base_path = '/etc/Frames'
 
 
 
-
 def callback(ch, method, properties, body):
     print(f" [x] Received {body.decode()}")
     frame_metadata = json.loads(body.decode())
