@@ -1,8 +1,7 @@
 import json
 import pika
 import os
-
-print('Starting Savant client...')
+import cv2
 
 
 connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
@@ -10,6 +9,14 @@ channel = connection.channel()
 
 channel.queue_declare(queue='Frames', durable=True)
 
-for file in os.listdir('/home/ia/user3/IA/Frames'):
-    file_msg={"path": file}
+
+vidcap = cv2.VideoCapture(r'/home/ia/user3/IA/video.mp4')
+success,image = vidcap.read()
+count = 0
+while success:
+    path = f"/home/ia/user3/IA/Frames/frame{count}.jpg"
+    cv2.imwrite(path, image)
+    success,image = vidcap.read()
+    file_msg = {"path": path}
     channel.basic_publish(exchange='', routing_key='Frames', body=json.dumps(file_msg))
+    count += 1
