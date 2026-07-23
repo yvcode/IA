@@ -5,7 +5,7 @@ import os
 print('Starting Savant client...')
 
 
-connection = pika.BlockingConnection(pika.ConnectionParameters('rabbitmq'))
+connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
 channel = connection.channel()
 
 channel.queue_declare(queue='Frames', durable=True)
