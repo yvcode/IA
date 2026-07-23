@@ -91,11 +91,13 @@ def callback(ch, method, properties, body):
     print(f" [x] Received {body.decode()}")
     frame_metadata = json.loads(body.decode())
     path = os.path.join(base_path, frame_metadata["path"])
-
-    frame_source = JpegSource(source_id, path, pts=frame_counter)
-    frame_metadata_cache[frame_counter] = path
-    frame_counter +=1
-    source(frame_source, send_eos=False)
+    try:
+        frame_source = JpegSource(source_id, path, pts=frame_counter)
+        frame_metadata_cache[frame_counter] = path
+        frame_counter +=1
+        source(frame_source, send_eos=False)
+    except:
+        pass
 
 channel.basic_consume(
     queue='Frames',
