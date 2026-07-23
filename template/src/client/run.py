@@ -102,7 +102,7 @@ def callback(ch, method, properties, body):
         frame_source = JpegSource(source_id, path, pts=frame_counter)
         frame_metadata_cache[frame_counter] = path
         frame_counter +=1
-        source(frame_source, send_eos=True)
+        source(frame_source, send_eos=False)
     except Exception:
         print(traceback.format_exc())
 channel.basic_qos(prefetch_count=1)
