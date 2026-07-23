@@ -14,7 +14,7 @@ vidcap = cv2.VideoCapture(r'/home/ia/user3/IA/video.mp4')
 success,image = vidcap.read()
 count = 0
 while success:
-    filename="frame{count}.jpg"
+    filename=f"frame{count}.jpg"
     path = os.path.join("/home/ia/user3/IA/Frames/", filename)
     cv2.imwrite(path, image)
     success,image = vidcap.read()
