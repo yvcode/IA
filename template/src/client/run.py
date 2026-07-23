@@ -93,11 +93,10 @@ sink = (
 
 
 def callback(ch, method, properties, body):
-    global frame_counter, active_delivery_tag
+    global frame_counter
     print(f" [x] Received {body.decode()}")
     pool_limiter.acquire()
     frame_metadata = json.loads(body.decode())
-    active_delivery_tag = method.delivery_tag
     path = os.path.join(base_path, frame_metadata["path"])
     try:
         frame_source = JpegSource(source_id, path, pts=frame_counter)
@@ -110,7 +109,7 @@ channel.basic_qos(prefetch_count=1)
 channel.basic_consume(
     queue='Frames',
     on_message_callback=callback,
-    auto_ack=False
+    auto_ack=True
 )
 
 consumer = threading.Thread(target=channel.start_consuming, args=())
@@ -124,7 +123,6 @@ for result in sink:
         if result.eos:
             # second message is the EOS
             print('EOS')
-            channel.basic_ack(delivery_tag=active_delivery_tag)
             # Optionally send a shutdown message to the module
             # source.send_shutdown(source_id, shutdown_auth)
             continue
