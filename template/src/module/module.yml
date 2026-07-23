@@ -7,9 +7,7 @@ parameters:
     padding:
       keep: true
       left: 0
-      # for 2x112px mini-portraits + 3x24px paddings
-      # total width of 1576 is expected (1576 mod 4 == 0, which may be important on jetson)
-      #right: ${calc:"2*arg_0 + 3*arg_1", ${parameters.face_width}, ${parameters.face_tile_padding}}
+      right: 0
       top: 0
       bottom: 0
 
@@ -106,7 +104,3 @@ pipeline:
             class_name: TensorToVectorConverter
           attributes:
             - name: feature
-
-    - element: pyfunc
-      module: src.module.custom_pyfunc
-      class_name: CustomPyFunc

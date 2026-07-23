@@ -31,52 +31,27 @@ pub_channel = connection.channel()
 channel.queue_declare(queue='Frames', durable=True)
 pub_channel.queue_declare(queue='Results', durable=True)
 
-
-
-# Initialize Jaeger tracer to send metrics and logs to Jaeger.
-# Note: the Jaeger tracer also should be configured in the module.
 telemetry_config = TelemetryConfiguration(
     context_propagation_format=ContextPropagationFormat.W3C,
     tracer=TracerConfiguration(
         service_name='savant-client',
         protocol=Protocol.Grpc,
         endpoint='http://jaeger:4317',
-        # tls=ClientTlsConfig(
-        #     ca='/path/to/ca.crt',
-        #     identity=Identity(
-        #         certificate='/path/to/client.crt',
-        #         key='/path/to/client.key',
-        #     ),
-        # ),
-        # timeout=5000,  # milliseconds
     ),
 )
 telemetry.init(telemetry_config)
-# or
-# use x509 provider config file
-# (take a look at samples/telemetry/otlp/x509_provider_config.json)
-# telemetry.init_from_file('/path/to/x509_provider_config.json')
 
-module_hostname = os.environ.get('MODULE_HOSTNAME', 'localhost')
 jaeger_endpoint = 'http://jaeger:16686'
-healthcheck_url = f'http://{module_hostname}:8888/status'
 source_id = 'test-source'
-shutdown_auth = 'shutdown'
-parent_dir = os.path.dirname(os.path.dirname(__file__))
-result_img_path = os.path.join('/etc/Frames', 'result_img.jpeg')
 base_path = '/etc/Frames'
 frame_counter = 0
 frame_metadata_cache = {}
 pool_limiter = threading.Semaphore(1)
-active_delivery_tag = None
-# Build the source
+
 source = (
     SourceBuilder()
     .with_log_provider(JaegerLogProvider(jaeger_endpoint))
     .with_socket('pub+connect:ipc:///tmp/zmq-sockets/input-video.ipc')
-    # Note: healthcheck port should be configured in the module.
-    .with_module_health_check_url(healthcheck_url)
-    .with_module_health_check_timeout(800)
     .build()
 )
 
@@ -86,8 +61,6 @@ sink = (
     .with_source_id(source_id)
     .with_idle_timeout(800)
     .with_log_provider(JaegerLogProvider(jaeger_endpoint))
-    # Note: healthcheck port should be configured in the module.
-    .with_module_health_check_url(healthcheck_url)
     .build()
 )
 
@@ -113,7 +86,6 @@ channel.basic_consume(
 )
 
 consumer = threading.Thread(target=channel.start_consuming, args=())
-#time.sleep(60)
 print("Start consuming")
 consumer.start()
 for result in sink:
@@ -121,24 +93,14 @@ for result in sink:
         pool_limiter.release()
         print(f'Sink result trace_id {result.trace_id}')
         if result.eos:
-            # second message is the EOS
-            print('EOS')
-            # Optionally send a shutdown message to the module
-            # source.send_shutdown(source_id, shutdown_auth)
             continue
         original_path= frame_metadata_cache[result.frame_meta.pts]
         frame_metadata_cache.pop(result.frame_meta.pts, None)
         faces = []
-        #print(f"result dir: {dir(result)}")
-        #print(f"result frame meta dir: {dir(result.frame_meta)}")
         for obj in result.frame_meta.get_all_objects():
             if obj.label=="frame":
                 continue
-            #print(f"obj dir {obj.label}: {dir(obj)}")
-            #print(f"attrs: {obj.attributes}")
-            print(f"Obj label: {obj.label}")
             if obj.label == "face":
-                print("FACE FOUND")
                 attr = obj.get_attribute(MODEL_NAME, "feature")
                 if attr is not None:
                     feature_vector = attr.values[0].as_floats()

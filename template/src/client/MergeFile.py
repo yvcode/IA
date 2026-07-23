@@ -1,3 +1,4 @@
+# Util used to merge directory of frames to single video
 import os
 import cv2
 
