@@ -1,32 +1,28 @@
-# module name, required
-name: ${oc.env:MODULE_NAME, 'template'}
+name: face_reid
 
-# base module parameters
 parameters:
-  # DevMode (hot Python code reload on file change)
-  dev_mode: True
-  # Allows sending shutdown message to the module with the auth-key (see below)
-  shutdown_auth: "shutdown"
-  # enable OpenTelemetry
-  telemetry:
-    tracing:
-      sampling_period: 100
-      root_span_name: pipeline
-      provider: opentelemetry
-      provider_params:
-        service_name: demo-pipeline
-        protocol: grpc
-        endpoint: "http://jaeger:4317"
-
-  # pipeline processing frame parameters
   frame:
     width: 1280
     height: 720
-    # Add paddings to the frame before processing
+    padding:
+      keep: true
+      left: 0
+      # for 2x112px mini-portraits + 3x24px paddings
+      # total width of 1576 is expected (1576 mod 4 == 0, which may be important on jetson)
+      #right: ${calc:"2*arg_0 + 3*arg_1", ${parameters.face_width}, ${parameters.face_tile_padding}}
+      top: 0
+      bottom: 0
+
   output_frame:
     codec: jpeg
-  # custom drawing on frames function
-  # custom drawing on frames function
+
+  face_tile_padding: 24
+  face_width: 112
+  face_height: 112
+  detection_model_name: yolov8nface
+
+  reid_model_name: adaface_ir50_webface4m_90fb74c
+
   draw_func:
     module: src.module.overlay_draw_spec
     class_name: Overlay
@@ -36,66 +32,81 @@ parameters:
         person:
         face:
 
-# pipeline definition
+  batch_size: 1
+
 pipeline:
-  # define pipeline's main elements
+
   elements:
-    # primary detector element, inference is provided by the nvinfer Deepstream element
-    # model type is detector (other available types are: classifier, custom)
-    - element: nvinfer@detector
-      # Model's name in the pipeline, mandatory
-      name: peoplenet
-      # model definition
+    # detector
+    - element: nvinfer@complex_model
+      name: ${parameters.detection_model_name}
       model:
-        # remote storage where the model files can be found
-        # skip if providing model files locally
         remote:
-          url: s3://savant-data/models/peoplenet/peoplenet_deployable_quantized_onnx_v2.6.3.zip
-          checksum_url: s3://savant-data/models/peoplenet/peoplenet_deployable_quantized_onnx_v2.6.3.md5
+          url: s3://savant-data/models/yolov8face/${parameters.detection_model_name}.zip
+          checksum_url: s3://savant-data/models/yolov8face/${parameters.detection_model_name}.md5
           parameters:
             endpoint: https://eu-central-1.linodeobjects.com
-
-        # model file name, without location
-        model_file: resnet34_peoplenet.onnx
-
-        # configuration of input data and custom preprocessing methods
+        format: onnx
+        config_file: yolov8n-face.txt
+        batch_size: ${parameters.batch_size}
         input:
-          # model input layer name
-          layer_name: input_1:0
-          # model input layer shape
-          shape: [3, 544, 960]
-          # pixel scaling/normalization factor
-          scale_factor: 0.0039215697906911373
-
-        # configuration of model output
+          shape: [3, 640, 640]
         output:
-          # model output layer names
-          layer_names: [output_bbox/BiasAdd:0, output_cov/Sigmoid:0]
-          # number of detected classes for detector model
-          num_detected_classes: 3
-          # specify which detected objects are included in output
+          layer_names: [ 'output0' ]
+          converter:
+            module: savant.converter.yolo_v8face
+            class_name: YoloV8faceConverter
+            kwargs:
+              confidence_threshold: 0.2
+              nms_iou_threshold: 0.2
           objects:
-            # object class id
             - class_id: 0
-              # label assigned to objects of this class id
-              label: person
-              selector:
-                kwargs:
-                  # minimal width of the objects of this class to be included in output
-                  min_width: 32
-                  # minimal height of the objects of this class to be included in output
-                  min_height: 32
-            - class_id: 2
               label: face
               selector:
+                module: savant.selector.detector
+                class_name: MinMaxSizeBBoxSelector
                 kwargs:
-                  # minimal width of the objects of this class to be included in output
-                  min_width: 16
-                  # minimal height of the objects of this class to be included in output
-                  min_height: 16
+                  min_width: 10
+                  min_height: 10
+          attributes:
+            - name: landmarks
 
-    # custom pyfunc element
+    - element: nvtracker
+      properties:
+        ll-lib-file: /opt/nvidia/deepstream/deepstream/lib/libnvds_nvmultiobjecttracker.so
+        ll-config-file: /opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/config_tracker_NvDCF_perf.yml
+        tracker-width: 960
+        tracker-height: 544
+        display-tracking-id: 0
+
+    - element: nvinfer@attribute_model
+      name: ${parameters.reid_model_name}
+      model:
+        remote:
+          url: s3://savant-data/models/${parameters.reid_model_name}/${parameters.reid_model_name}.zip
+          checksum_url: s3://savant-data/models/${parameters.reid_model_name}/${parameters.reid_model_name}.md5
+          parameters:
+            endpoint: https://eu-central-1.linodeobjects.com
+        format: onnx
+        model_file: adaface_ir50_webface4m.onnx
+        batch_size: 16
+        input:
+          object: ${parameters.detection_model_name}.face
+          shape: [3, 112, 112]
+          offsets: [127.5, 127.5, 127.5]
+          scale_factor: 0.007843137254902
+          color_format: bgr
+          preprocess_object_image:
+            module: savant.input_preproc.align_face
+            class_name: AlignFacePreprocessingObjectImageGPU
+        output:
+          layer_names: [ 'feature' ]
+          converter:
+            module: savant.converter
+            class_name: TensorToVectorConverter
+          attributes:
+            - name: feature
+
     - element: pyfunc
       module: src.module.custom_pyfunc
       class_name: CustomPyFunc
-      #kwargs:

@@ -8,7 +8,13 @@ connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
 channel = connection.channel()
 
 channel.queue_declare(queue='Frames', durable=True)
+files = os.listdir("/home/ia/user3/IA/Frames/")
+for file in files:
+    print("added")
+    file_msg = {"path": file}
+    channel.basic_publish(exchange='', routing_key='Frames', body=json.dumps(file_msg))
 
+"""
 
 vidcap = cv2.VideoCapture(r'/home/ia/user3/IA/video.mp4')
 success,image = vidcap.read()
@@ -21,3 +27,4 @@ while success:
     file_msg = {"path": filename}
     channel.basic_publish(exchange='', routing_key='Frames', body=json.dumps(file_msg))
     count += 1
+"""
