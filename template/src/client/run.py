@@ -139,7 +139,10 @@ for result in sink:
             print(f"Obj label: {obj.label}")
             if obj.label == "face":
                 print("FACE FOUND")
-                faces.append(obj.get_attr_meta(MODEL_NAME, 'feature').value)
+                attr = obj.get_attribute(MODEL_NAME, "feature")
+                if attr is not None:
+                    feature_vector = attr.values[0].as_floats()
+                    faces.append(feature_vector)
         result = {"faces": faces, "path": original_path}
         pub_channel.basic_publish(exchange='', routing_key='Results', body=json.dumps(result))
     except Exception:
