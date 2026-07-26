@@ -1,6 +1,6 @@
 import threading
 
-from template.src.client.Sink.ResultProvider import ResultProvider
+from Sink.ResultProvider import ResultProvider
 
 
 class SinkManager: # Get repository shared with InputManager to sync parallel. share metadata on files using their pts.

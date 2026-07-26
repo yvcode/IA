@@ -1,7 +1,7 @@
 import threading
 
-from template.src.client.Source.RabbitVideoProvider import RabbitVideoProvider
-from template.src.client.MetadataRepository import FrameContext
+from Source.RabbitVideoProvider import RabbitVideoProvider
+from MetadataRepository import FrameContext
 
 
 class SourceManager:

@@ -1,17 +1,17 @@
 import time
 from savant.client import JaegerLogProvider
 
-from template.src.client.Sink.EncodingsRabbitPublisher import EncodingsRabbitPublisher
-from template.src.client.Sink.EosResultFilter import EosResultFilter
-from template.src.client.Sink.FaceEncoder import FaceEncoder
-from template.src.client.Sink.FaceObjectFilter import FaceObjectFilter
-from template.src.client.Source.FrameExtractor import FrameExtractor
-from template.src.client.MetadataRepository import MetadataRepository
-from template.src.client.RateLimiter import RateLimiter
-from template.src.client.Source.SavantPublisher import SavantPublisher
-from template.src.client.Sink.SinkManager import SinkManager
-from template.src.client.Source.SourceManager import SourceManager
-from template.src.client.Source.SourceMapper import SourceMapper
+from Sink.EncodingsRabbitPublisher import EncodingsRabbitPublisher
+from Sink.EosResultFilter import EosResultFilter
+from Sink.FaceEncoder import FaceEncoder
+from Sink.FaceObjectFilter import FaceObjectFilter
+from Source.FrameExtractor import FrameExtractor
+from MetadataRepository import MetadataRepository
+from RateLimiter import RateLimiter
+from Source.SavantPublisher import SavantPublisher
+from Sink.SinkManager import SinkManager
+from Source.SourceManager import SourceManager
+from Source.SourceMapper import SourceMapper
 
 MODEL_NAME = "adaface_ir50_webface4m_90fb74c"
 
