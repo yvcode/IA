@@ -1,231 +1,23 @@
-import json
-import os
 import time
-import pika
-import threading
-import traceback
-import cv2
-import numpy as np
-from savant_rs import telemetry
-from savant_rs.match_query import MatchQuery
-from savant_rs.telemetry import (
-    ContextPropagationFormat,
-    Protocol,
-    TelemetryConfiguration,
-    TracerConfiguration,
-)
-from savant_rs.primitives import Attribute, AttributeValue, VideoFrameUpdate
-import uuid
-from savant.api.builder import build_bbox
-from savant.client import JaegerLogProvider, JpegSource, SinkBuilder, SourceBuilder
-from dataclasses import dataclass
-import io
+from savant.client import JaegerLogProvider
+
+from template.src.client.Sink.EncodingsRabbitPublisher import EncodingsRabbitPublisher
+from template.src.client.Sink.EosResultFilter import EosResultFilter
+from template.src.client.Sink.FaceEncoder import FaceEncoder
+from template.src.client.Sink.FaceObjectFilter import FaceObjectFilter
+from template.src.client.Source.FrameExtractor import FrameExtractor
+from template.src.client.MetadataRepository import MetadataRepository
+from template.src.client.RateLimiter import RateLimiter
+from template.src.client.Source.SavantPublisher import SavantPublisher
+from template.src.client.Sink.SinkManager import SinkManager
+from template.src.client.Source.SourceManager import SourceManager
+from template.src.client.Source.SourceMapper import SourceMapper
 
 MODEL_NAME = "adaface_ir50_webface4m_90fb74c"
 
+time.sleep(10) # Wait for dependencies to initiate
+
 print('Starting new Savant client...!')
-
-
-@dataclass
-class FrameContext:
-    frame_index: int
-    original_file_path: str
-
-
-class MetadataRepository:
-    def __init__(self):
-        self.repository = {}
-        self.counter = 0
-
-    def save(self, source, index, original_file_path):
-        guid = str(uuid.uuid4())
-        guid_update = VideoFrameUpdate()
-        guid_update.add_frame_attribute(
-            Attribute(
-                namespace="frame_repository",
-                name="guid",
-                values=[AttributeValue.string(guid)],
-            )
-        )
-        source = source.with_update(guid_update)
-        self.repository[guid] = original_file_path
-        return source
-
-
-    def get(self, result):
-        guid = result.frame_meta.get_attribute("frame_repository", "guid").values[0].as_string()
-        return self.repository[guid]
-
-
-class RabbitVideoProvider:
-    def __init__(self, rabbit_host, queue_name, video_callback):
-        connection = pika.BlockingConnection(pika.ConnectionParameters(rabbit_host))
-        self.channel = connection.channel()
-        self.channel.queue_declare(queue=queue_name, durable=True)
-        self.channel.basic_qos(prefetch_count=1)
-        self.frame_counter = 0
-        self.video_callback = video_callback
-        self.channel.basic_consume(
-            queue=queue_name,
-            on_message_callback=self._rabbit_callback,
-            auto_ack=True
-        )
-
-    def provide_loop(self):
-        self.channel.start_consuming()
-
-    def _rabbit_callback(self, ch, method, properties, body):
-        print(f" [x] Received {body.decode()}")
-        msg = json.loads(body.decode())
-        path = msg["path"]
-
-        self.video_callback(path)
-
-class FrameExtractor:
-    def extract(self, video_path):
-        video = cv2.VideoCapture(video_path)
-        success, frame = video.read()
-        while success:
-            yield frame
-            success, frame = video.read()
-
-class SourceMapper:
-    def __init__(self, source_id):
-        self.source_id = source_id
-        self.counter = 0
-
-    def map(self, frame):
-        success, buffer = cv2.imencode('.jpg', frame)
-        if not success:
-            # Log error
-            return
-
-        jpeg_bytes = buffer.tobytes()
-        frame_source = JpegSource(
-            source_id=self.source_id,
-            file=io.BytesIO(jpeg_bytes),
-            pts=self.counter
-        )
-        return frame_source
-
-class SavantPublisher:
-    def __init__(self, savant_uri, jaeger_provider):
-        self.savant_source =  (
-            SourceBuilder()
-            .with_log_provider(jaeger_provider)
-            .with_socket(savant_uri)
-            .build()
-        )
-
-    def publish(self, frame_source):
-        self.savant_source(frame_source, send_eos=False)
-
-
-class RateLimiter:
-    def __init__(self, pool_size):
-        self.semaphore = threading.Semaphore(pool_size)
-    def acquire(self):
-        self.semaphore.acquire()
-    def release(self):
-        self.semaphore.release()
-
-class SourceManager:
-    def __init__(self, metadata_repository, jaeger_provider, rate_limiter):
-        self.metadata_repository = metadata_repository
-        self.rate_limiter = rate_limiter
-        self.frame_extractor = FrameExtractor()
-        self.source_mapper = SourceMapper("vid-source")
-        self.savant_publisher = SavantPublisher('pub+connect:ipc:///tmp/zmq-sockets/input-video.ipc',
-                                            jaeger_provider)
-
-        self.video_provider = RabbitVideoProvider("rabbitmq", "Videos", self.process)
-        self.provider =  threading.Thread(target=self.video_provider.provide_loop, args=())
-        self.provider.start()
-
-
-    def process(self, path):
-        for index, frame in enumerate(self.frame_extractor.extract(path)):
-            self.rate_limiter.acquire()
-            frame_source = self.source_mapper.map(frame)
-            frame_source = self.metadata_repository.save(frame_source, index, path)
-            self.savant_publisher.publish(frame_source)
-
-class ResultProvider:
-    def __init__(self, savant_uri, source_id, jaeger_provider, callback):
-        self.provider = (
-            SinkBuilder()
-            .with_socket(savant_uri)
-            .with_source_id(source_id)
-            .with_idle_timeout(800)
-            .with_log_provider(jaeger_provider)
-            .build()
-        )
-        self.callback = callback
-    def provide_loop(self):
-        for result in self.provider:
-            self.callback(result)
-
-class EosResultFilter:
-    def is_valid(self, result):
-        if result.eos:
-            return False
-        return True
-
-class FaceObjectFilter:
-    def is_valid(self, result_obj):
-        return result_obj.label == "face"
-
-class FaceEncoder:
-    def __init__(self, model_name):
-        self.model_name = model_name
-    def encode(self, obj):
-        attr = obj.get_attribute(self.model_name, "feature")
-        if attr is not None:
-            return attr.values[0].as_floats()
-        return None
-
-class EncodingsRabbitPublisher:
-    def __init__(self, rabbit_host, queue_name, video_callback):
-        connection = pika.BlockingConnection(pika.ConnectionParameters(rabbit_host))
-        self.channel = connection.channel()
-        self.queue_name = queue_name
-        self.channel.queue_declare(queue=self.queue_name, durable=True)
-
-    def publish(self, file_path, frame_index, encodings):
-        msg = {"file_path": file_path, "frame_index": frame_index, "encodings": encodings}
-        self.channel.basic_publish(exchange='', routing_key=self.queue_name, body=json.dumps(msg))
-
-
-
-class SinkManager: # Get repository shared with InputManager to sync parallel. share metadata on files using their pts.
-    def __init__(self, metadata_repository, jaeger_provider, rate_limiter):
-        self.metadata_repository = metadata_repository
-        self.result_provider = ResultProvider('sub+connect:ipc:///tmp/zmq-sockets/output-video.ipc',
-                                             'vid-source',
-                                             jaeger_provider,
-                                              self.process
-                                              )
-        self.rate_limiter = rate_limiter
-        self.provider = threading.Thread(target=self.result_provider.provide_loop, args=())
-        self.provider.start()
-        self.result_filter = EosResultFilter()
-        self.object_filter = FaceObjectFilter()
-        self.encoder = FaceEncoder(MODEL_NAME)
-        self.publisher = EncodingsRabbitPublisher("rabbitmq", "Results", self.process)
-
-    def process(self, result):
-        self.rate_limiter.release()
-        if not self.result_filter.is_valid(result):
-            return
-        path = self.metadata_repository.get(result) # should be replaced
-        encodings = []
-        for obj in result.frame_meta.get_all_objects():
-            if not self.object_filter.is_valid(obj):
-                continue
-
-            encodings.append(self.encoder.encode(obj))
-        self.publisher.publish(path, 666, encodings) # 666 to be replaced with the context
-
 
 jaeger_endpoint = "http://jaeger:16686"
 JaegerLogProvider(jaeger_endpoint)
@@ -233,10 +25,14 @@ JaegerLogProvider(jaeger_endpoint)
 jaeger_provider = JaegerLogProvider(jaeger_endpoint)
 rate_limiter = RateLimiter(1)
 metadata_repository = MetadataRepository()
-SinkManager = SinkManager(metadata_repository, jaeger_provider, rate_limiter)
+face_encoder = FaceEncoder(MODEL_NAME)
+result_filter = EosResultFilter()
+object_filter = FaceObjectFilter()
+publisher = EncodingsRabbitPublisher("rabbitmq", "Results")
 
-SourceManager = SourceManager(metadata_repository, jaeger_provider, rate_limiter)
+frame_extractor = FrameExtractor()
+savant_publisher = SavantPublisher('pub+connect:ipc:///tmp/zmq-sockets/input-video.ipc', jaeger_provider)
+source_mapper = SourceMapper("vid-source")
 
-
-
-
+SinkManager = SinkManager(metadata_repository, jaeger_provider, rate_limiter, face_encoder, result_filter, object_filter, publisher)
+SourceManager = SourceManager(metadata_repository, jaeger_provider, rate_limiter, frame_extractor, savant_publisher, source_mapper)
