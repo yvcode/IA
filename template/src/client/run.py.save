@@ -14,7 +14,7 @@ from savant_rs.telemetry import (
     TelemetryConfiguration,
     TracerConfiguration,
 )
-from savant_rs.primitives import Attribute, AttributeValue, VideoFrameUpdate
+from savant_rs.primitives import Attribute, AttributeValue
 import uuid
 from savant.api.builder import build_bbox
 from savant.client import JaegerLogProvider, JpegSource, SinkBuilder, SourceBuilder
@@ -37,24 +37,19 @@ class MetadataRepository:
         self.repository = {}
         self.counter = 0
 
-    def save(self, source, index, original_file_path):
+    def save(self, frame, index, original_file_path):
         guid = str(uuid.uuid4())
-        guid_update = VideoFrameUpdate()
-        guid_update.add_frame_attribute(
-            Attribute(
-                namespace="frame_repository",
-                name="guid",
-                values=[AttributeValue.string(guid)],
-            )
-        )
-        source = source.with_update(guid_update)
+        frame.set_attribute("frame_repository", "guid", guid)
+        #context = FrameContext(original_file_path, index)
+        #self.repository[guid] = context
         self.repository[guid] = original_file_path
-        return source
+        #self.counter += 1
 
 
-    def get(self, result):
-        guid = result.frame_meta.get_attribute("frame_repository", "guid").values[0].as_string()
+    def get(self, frame):
+        guid = frame.get_attribute("frame_repository", "guid")
         return self.repository[guid]
+        #return self.repository[frame.pts]
 
 
 class RabbitVideoProvider:
@@ -121,18 +116,10 @@ class SavantPublisher:
         self.savant_source(frame_source, send_eos=False)
 
 
-class RateLimiter:
-    def __init__(self, pool_size):
-        self.semaphore = threading.Semaphore(pool_size)
-    def acquire(self):
-        self.semaphore.acquire()
-    def release(self):
-        self.semaphore.release()
-
 class SourceManager:
-    def __init__(self, metadata_repository, jaeger_provider, rate_limiter):
+    def __init__(self, metadata_repository, jaeger_provider):
         self.metadata_repository = metadata_repository
-        self.rate_limiter = rate_limiter
+
         self.frame_extractor = FrameExtractor()
         self.source_mapper = SourceMapper("vid-source")
         self.savant_publisher = SavantPublisher('pub+connect:ipc:///tmp/zmq-sockets/input-video.ipc',
@@ -145,9 +132,8 @@ class SourceManager:
 
     def process(self, path):
         for index, frame in enumerate(self.frame_extractor.extract(path)):
-            self.rate_limiter.acquire()
             frame_source = self.source_mapper.map(frame)
-            frame_source = self.metadata_repository.save(frame_source, index, path)
+            self.metadata_repository.save(frame_source, index, path)
             self.savant_publisher.publish(frame_source)
 
 class ResultProvider:
@@ -198,14 +184,13 @@ class EncodingsRabbitPublisher:
 
 
 class SinkManager: # Get repository shared with InputManager to sync parallel. share metadata on files using their pts.
-    def __init__(self, metadata_repository, jaeger_provider, rate_limiter):
+    def __init__(self, metadata_repository, jaeger_provider):
         self.metadata_repository = metadata_repository
         self.result_provider = ResultProvider('sub+connect:ipc:///tmp/zmq-sockets/output-video.ipc',
                                              'vid-source',
                                              jaeger_provider,
                                               self.process
                                               )
-        self.rate_limiter = rate_limiter
         self.provider = threading.Thread(target=self.result_provider.provide_loop, args=())
         self.provider.start()
         self.result_filter = EosResultFilter()
@@ -214,10 +199,9 @@ class SinkManager: # Get repository shared with InputManager to sync parallel. s
         self.publisher = EncodingsRabbitPublisher("rabbitmq", "Results", self.process)
 
     def process(self, result):
-        self.rate_limiter.release()
         if not self.result_filter.is_valid(result):
             return
-        path = self.metadata_repository.get(result) # should be replaced
+        path = self.metadata_repository.get(result.frame_meta) # should be replaced
         encodings = []
         for obj in result.frame_meta.get_all_objects():
             if not self.object_filter.is_valid(obj):
@@ -231,11 +215,10 @@ jaeger_endpoint = "http://jaeger:16686"
 JaegerLogProvider(jaeger_endpoint)
 
 jaeger_provider = JaegerLogProvider(jaeger_endpoint)
-rate_limiter = RateLimiter(1)
 metadata_repository = MetadataRepository()
-SinkManager = SinkManager(metadata_repository, jaeger_provider, rate_limiter)
+SinkManager = SinkManager(metadata_repository, jaeger_provider)
 
-SourceManager = SourceManager(metadata_repository, jaeger_provider, rate_limiter)
+SourceManager = SourceManager(metadata_repository, jaeger_provider)
 
 
 

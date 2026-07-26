@@ -6,7 +6,7 @@ services:
       file: docker-compose.l4t.yml
       service: client
     volumes:
-      - /home/ia/user3/IA/Frames:/etc/Frames
+      - /home/ia/user3/IA/:/home/ia/user3/IA
     networks:
       - RabbitNet
 

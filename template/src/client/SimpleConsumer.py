@@ -9,7 +9,7 @@ print('Starting frames consumer...')
 connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
 channel = connection.channel()
 
-channel.queue_declare(queue='Frames', durable=True)
+channel.queue_declare(queue='Videos', durable=True)
 
 base_path = '/etc/Frames'
 
@@ -20,7 +20,7 @@ def callback(ch, method, properties, body):
     print(f"Send: {path}")
 
 channel.basic_consume(
-    queue='Frames',
+    queue='Videos',
     on_message_callback=callback,
     auto_ack=True
 )
