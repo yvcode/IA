@@ -1,4 +1,6 @@
 import io
+import cv2
+from savant.client import JpegSource
 
 
 class SourceMapper:
